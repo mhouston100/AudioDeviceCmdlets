@@ -14,6 +14,35 @@ using System.Management.Automation;
 
 namespace AudioDeviceCmdlets
 {
+    // Class to interact with an audio session as an object with attributes
+    public class AudioSession
+    {
+        // Order in which this audio session appeared from AudioSessionManager of parent playback AudioDevice
+        public int Index;
+        // Name of the process that opened this audio session
+        public string Name;
+        // Volume level of this audio session
+        public string VolumeLevel;
+        // Mute state of this audio session
+        public bool MuteState;
+
+        // To be created, a new AudioSession needs an Index, a Name, a current volume level, and a current mute state
+        public AudioSession(int Index, string Name, string VolumeLevel, bool MuteState)
+        {
+            // Set this object's Index to the received integer
+            this.Index = Index;
+
+            // Set this object's Name to the received string
+            this.Name = Name;
+
+            // Set this object's VolumeLevel to the received string
+            this.VolumeLevel = VolumeLevel;
+
+            // Set this object's MuteState to the received bool
+            this.MuteState = MuteState;
+        }
+    }
+
     // Class to interact with a MMDevice as an object with attributes
     public class AudioDevice
     {
@@ -63,7 +92,68 @@ namespace AudioDeviceCmdlets
         }
     }
 
-    // Get Cmdlet
+    // Get AudioSession Cmdlet
+    [Cmdlet(VerbsCommon.Get, "AudioSession")]
+    public class GetAudioSession : Cmdlet
+    {
+        // Parameter called to list all sessions
+        [Parameter(Mandatory = true, Position = 0, ParameterSetName = "List")]
+        public SwitchParameter List
+        {
+            get { return list; }
+            set { list = value; }
+        }
+        private bool list;
+
+        // Cmdlet execution
+        protected override void ProcessRecord()
+        {
+            // Create a new MMDeviceEnumerator
+            MMDeviceEnumerator DevEnum = new MMDeviceEnumerator();
+            // Create a MMDeviceCollection of every devices that are enabled
+            MMDeviceCollection DeviceCollection = DevEnum.EnumerateAudioEndPoints(EDataFlow.eAll, EDeviceState.DEVICE_STATE_ACTIVE);
+
+            // If the List switch parameter was called
+            if (list)
+            {
+                // For every MMDevice in DeviceCollection
+                for (int i = 0; i < DeviceCollection.Count; i++)
+                {
+                    // If this MMDevice's ID is the same the default playback device's ID
+                    if (DeviceCollection[i].ID == DevEnum.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia).ID)
+                    {
+                        // For every audio sessions opened on this MMDevice
+                        for (int ii = 0; ii < DeviceCollection[i].AudioSessionManager.Sessions.Count; ii++)
+                        {
+                            // Get the name of the process that opened this audio session by its ID
+                            string ProcessName = System.Diagnostics.Process.GetProcessById(System.Convert.ToInt32(DeviceCollection[i].AudioSessionManager.Sessions[ii].ProcessID)).ProcessName;
+
+                            // If ProcessName is "Idle"
+                            if (ProcessName == "Idle")
+                            {
+                                // Change name to "Windows"
+                                ProcessName = "Windows";
+                            }
+
+                            // Get the volume level of the current audio session in relation to parent AudioDevice volume to emulate windows gui
+                            string VolumeLevel = (DeviceCollection[i].AudioSessionManager.Sessions[ii].SimpleAudioVolume.MasterVolume * 100 * DeviceCollection[i].AudioEndpointVolume.MasterVolumeLevelScalar).ToString("00") + "%";
+
+                            // Get the mute state of the current audio session
+                            bool MuteState = DeviceCollection[i].AudioSessionManager.Sessions[ii].SimpleAudioVolume.Mute;
+
+                            // Output the result of the creation of a new AudioSession while assining it an index, a name, a current volume level, and a current mute state
+                            WriteObject(new AudioSession(ii + 1, ProcessName, VolumeLevel, MuteState));
+                        }
+                    }
+                }
+
+                // Stop checking for other parameters
+                return;
+            }
+        }
+    }
+
+    // Get AudioDevice Cmdlet
     [Cmdlet(VerbsCommon.Get, "AudioDevice")]
     public class GetAudioDevice : Cmdlet
     {
@@ -175,7 +265,7 @@ namespace AudioDeviceCmdlets
                         WriteObject(new AudioDevice(i + 1, DeviceCollection[i]));
                     }
                 }
-                
+
                 // Stop checking for other parameters
                 return;
             }
@@ -254,7 +344,7 @@ namespace AudioDeviceCmdlets
                         WriteObject(new AudioDevice(i + 1, DeviceCollection[i], true));
                     }
                 }
-                
+
                 // Stop checking for other parameters
                 return;
             }
@@ -270,7 +360,7 @@ namespace AudioDeviceCmdlets
             }
 
             // If the PlaybackVolume switch parameter was called
-            if(playbackvolume)
+            if (playbackvolume)
             {
                 // Output the current volume level of the default playback device
                 WriteObject(string.Format("{0}%", DevEnum.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia).AudioEndpointVolume.MasterVolumeLevelScalar * 100));
@@ -292,7 +382,7 @@ namespace AudioDeviceCmdlets
                         WriteObject(new AudioDevice(i + 1, DeviceCollection[i], true));
                     }
                 }
-                
+
                 // Stop checking for other parameters
                 return;
             }
@@ -513,7 +603,7 @@ namespace AudioDeviceCmdlets
             }
 
             // If the PlaybackVolume parameter received a value
-            if(playbackvolume != null)
+            if (playbackvolume != null)
             {
                 // Set the volume level of the default playback device to that of the float value received by the PlaybackVolume parameter
                 DevEnum.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia).AudioEndpointVolume.MasterVolumeLevelScalar = (float)playbackvolume / 100.0f;
